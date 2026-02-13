@@ -1,0 +1,169 @@
+from concurrent.futures import thread
+import os
+from flask import Flask, render_template, url_for, request, redirect, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime, time
+from ESPEC import SH241
+import threading
+
+oven = SH241(address=1)
+#oven.OpenChannel()
+#oven.SetModeStandby()
+
+oven_status = {
+    "task_name": "Task",
+    "mode": "STANDBY",
+    "temp": 0,
+    "state": "IDLE",
+    "task_done": False
+}
+
+
+basedir = os.path.abspath(os.path.dirname(__file__))
+db_path = os.path.join(basedir, 'test.db')
+
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + db_path
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+current_task = None
+
+class TaskList(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    temp = db.Column(db.Float, default=0)
+    hour = db.Column(db.Integer, default=0)
+    min = db.Column(db.Integer, default=0)
+    sec = db.Column(db.Integer, default=0)
+    type = db.Column(db.String(50), default="Task")
+    start_time = db.Column(db.Float, default=0)
+    date_created = db.Column(db.DateTime, default=datetime.utcnow)
+
+@app.route('/', methods=['POST', 'GET'])
+def index():
+    tasks = TaskList.query.order_by(TaskList.date_created).all()
+    return render_template('index.html', tasks=tasks, current_task=current_task)
+
+@app.route('/cycle', methods=['POST', 'GET'])
+def cycle():
+    tasks = TaskList.query.order_by(TaskList.date_created).all()
+    return render_template('cycling mode.html', tasks=tasks, current_task=current_task)
+
+@app.route('/api/add_task', methods=['POST', 'GET'])
+def add_task_route():
+    if request.method == 'GET':
+        tasks = TaskList.query.order_by(TaskList.date_created).all()
+        return render_template('index.html', tasks=tasks, current_task=current_task)
+
+    if request.method == 'POST':
+        try:
+            if request.is_json:
+                data = request.json
+                
+                #Extract Data
+                t_temp = float(data.get('temp'))
+                t_h = int(data.get('hours', 0))
+                t_m = int(data.get('minutes', 0))
+                t_s = int(data.get('seconds', 0))
+
+                #Add to DATABASE (Logging)
+                new_db_task = TaskList(temp=t_temp, hour=t_h, min=t_m, sec=t_s, type="Task")
+                db.session.add(new_db_task)
+                db.session.commit()
+                
+                #Send to Oven
+                oven.AddTask(t_temp, t_h, t_m, t_s, taskname="Task", db_id=new_db_task.id)
+
+                return jsonify({"status": "success", "message": "Task added to Oven & DB"})
+
+            else:
+                #Fallback for standard HTML Forms
+                return "Error: Please use the JavaScript interface."
+
+        except Exception as e:
+            print(f"Error: {e}")
+            return jsonify({"status": "error", "message": str(e)}), 400
+        
+@app.route('/api/delete/<int:id>')
+def del_task_route(id):
+    #Tries to get taskid
+    task_to_delete = TaskList.query.get_or_404(id)
+    try:
+        db.session.delete(task_to_delete)
+        db.session.commit()
+        oven.deleteTask(id)
+        return redirect('/')
+    except Exception as e:
+        # --- DEBUGGING LINE ---
+        print(f"CRITICAL ERROR: {e}") 
+        # ----------------------
+        return f'There was a problem deleting that task: {e}'
+    
+@app.route('/api/start')
+def start_task_route():
+    task_to_start = db.session.query(TaskList).first()
+    global current_task
+
+    if task_to_start is None:
+        current_task = None
+        return "No tasks in the database to start."
+    
+    try:
+        current_task = task_to_start
+        current_task.start_time = datetime.now().timestamp()
+        db.session.delete(task_to_start)
+        db.session.commit()
+        thread = threading.Thread(target=oven.startTask)
+        thread.start()
+        return "Task Started", 200
+    
+    except Exception as e:
+        return f'There was a problem starting the task: {e}'    
+    
+@app.route('/api/stop')
+def stop_task_route():
+    task_to_stop = db.session.query(TaskList).first()
+    if task_to_stop is None:
+        return "No tasks in the database to stop."
+    
+    try:
+        global current_task
+        current_task = None
+        oven.stopTask()
+        return redirect('/')
+    except Exception as e:
+        return f'There was a problem stopping the task: {e}' 
+    
+def update_status_loop():
+    while True:
+        if oven_status['state'] != "IDLE":
+            oven_status['mode'] = oven.mode
+            oven_status["temp"] = oven.temperature
+            oven_status["state"] = oven.state
+            oven_status["task_done"] = oven.task_done
+        threading.Event().wait(1)  # Update every 3 seconds
+        
+        if oven_status["task_done"]:
+            global current_task
+            current_task = None
+            oven.task_done = False
+            start_task_route()
+
+if __name__ == '__main__':
+    with app.app_context():
+        # 3. Print the path so you can copy-paste it into your file explorer
+        print(f"DATABASE LOG: Looking for DB at: {db_path}")
+        
+        # 4. Wipe it and recreate it to fix the 'type' column error
+        db.drop_all() 
+        db.create_all()
+        print("DATABASE LOG: Tables recreated successfully!")
+        try:
+            num_deleted = db.session.query(TaskList).delete()
+            db.session.commit()
+            print(f"Startup Cleanup: Deleted {num_deleted} old tasks from the database.")
+        except Exception as e:
+            print(f"Cleanup Error: {e}")
+            db.session.rollback()
+        update_status_loop_thread = threading.Thread(target=update_status_loop, daemon=True)
+        update_status_loop_thread.start()
+    app.run(debug=False)

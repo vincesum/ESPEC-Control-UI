@@ -1,0 +1,15 @@
+Functionalities
+
+-Set Temperature
+-Set heating ramp
+-Get current temperature
+-Set duration for heating & ability to pause/stop operation
+-Display current time elapsed
+-Display current operation	
+-Collect temperature ramp data
+-Use more of manual python control rather than program
+
+-Soaking mode(heat up to this temperature then maintain for duration)
+-Ramping mode(heat up to this temperature over a certain duration)
+
+-Cycle the tasklist???

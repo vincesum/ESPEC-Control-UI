@@ -1,0 +1,309 @@
+{% extends 'base.html' %}
+{% block head %}
+<Title>ESPEC Temperature Chamber Controller</Title>
+{% endblock %}
+{% block body %}
+<header class="navbar-container">
+    <h1 class="logo">ESPEC Temperature Chamber Controller</h1>
+    <nav class="nav-links">
+        <a href="/" class="btn1">Soaking Mode</a>
+        <a href="/cycle" class="btn2">Cycling Mode</a>
+    </nav>
+</header>
+
+<main>
+    <div class="container">
+    <div class="left">
+    <div class="input-group">
+        <h3>Add New Task</h3>
+        
+        <div style="display: flex; gap: 10px; margin: 0px; border: 0px; padding: 0px;">
+            <input type="number" id="newTemp" list="tempOptions" placeholder="Temp(°C)" style="width: 100px;">
+            
+            <datalist id="tempOptions">
+                <option value="0"></option>
+                <option value="5"></option>
+                <option value="10"></option>
+                <option value="15"></option>
+                <option value="20"></option>
+                <option value="25"></option>
+                <option value="30"></option>
+                <option value="35"></option>
+                <option value="40"></option>
+                <option value="45"></option>
+                <option value="50"></option>
+                <option value="55"></option>
+                <option value="60"></option>
+                <option value="65"></option>
+                <option value="70"></option>
+                <option value="75"></option>
+                <option value="80"></option>
+                <option value="85"></option>
+                <option value="90"></option>
+                <option value="95"></option>
+                <option value="100"></option>
+            </datalist>
+
+            <input type="number" id="newHrs" list="hourOptions" placeholder="Hrs" style="width: 80px;">
+
+            <datalist id="hourOptions">
+                <option value="0"></option>
+                <option value="1"></option>
+                <option value="2"></option>
+                <option value="3"></option>
+                <option value="4"></option>
+                <option value="5"></option>
+                <option value="6"></option>
+                <option value="7"></option>
+                <option value="8"></option>
+                <option value="9"></option>
+                <option value="10"></option>
+                <option value="11"></option>
+                <option value="12"></option>
+                <option value="13"></option>
+                <option value="14"></option>
+                <option value="15"></option>
+                <option value="16"></option>
+                <option value="17"></option>
+                <option value="18"></option>
+                <option value="19"></option>
+                <option value="20"></option>
+                <option value="21"></option>
+                <option value="22"></option>
+                <option value="23"></option>
+                <option value="24"></option>
+            </datalist>
+
+            <input type="number" id="newMin" list="minOptions" placeholder="Mins" style="width: 80px;">
+            
+            <datalist id="minOptions">
+                <option value="0"></option>
+                <option value="5"></option>
+                <option value="10"></option>
+                <option value="15"></option>
+                <option value="20"></option>
+                <option value="25"></option>
+                <option value="30"></option>
+                <option value="35"></option>
+                <option value="40"></option>
+                <option value="45"></option>
+                <option value="50"></option>
+                <option value="55"></option>
+            </datalist>
+            
+            <input type="number" id="newSec" list="secOptions" placeholder="Secs" style="width: 80px;">
+            
+            <datalist id="secOptions">
+                <option value="0"></option>
+                <option value="5"></option>
+                <option value="10"></option>
+                <option value="15"></option>
+                <option value="20"></option>
+                <option value="25"></option>
+                <option value="30"></option>
+                <option value="35"></option>
+                <option value="40"></option>
+                <option value="45"></option>
+                <option value="50"></option>
+                <option value="55"></option>
+            </datalist>
+        </div>
+
+
+        <button class="greenbtn" onclick="sendNewTask()" style="font-size: 18px; margin-top: 10px; border: none; padding: 10px; cursor: pointer;">
+            + Add Task
+        </button>  
+
+    </div>
+        <p>DEBUG DATA: {{ tasks }}</p>
+        <table>
+            <tr>
+                <th>Task</th>
+                <th>Added</th>
+                <th>Actions</th>
+            </tr>
+            
+            {% for task in tasks %}
+            
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    
+                    <td>
+                        {% if task.type == "Task" %}
+                            Soak at {{ task.temp }}°C for {{ task.hour }}hr {{ task.min }}min {{ task.sec }}sec
+                        {% elif task.type == "Idle" %}
+                            Idle for {{ task.hour }}hr {{ task.min }}min {{ task.sec }}sec
+                        {% endif %}
+                        <a href="/api/delete/{{ task.id }}">
+                            <button>Delete</button>
+                        </a>   
+                    </td>
+                </tr>
+            {% endfor %}
+        </table>
+    </div>
+    <div class="right">
+        <h2>
+            {% if current_task.type == "Task" %}
+                Current task: Soak at {{ current_task.temp }}°C for {{ current_task.hour }}hr {{ current_task.min }}min {{ current_task.sec }}sec
+            {% elif current_task.type == "Idle" %}
+                Current task: Idle for {{ current_task.hour }}hr {{ current_task.min }}min {{ current_task.sec }}sec
+            {% else %}
+                No active task.
+            {% endif %}
+        </h2>
+        <div>Time Left: <span id="time">00:00:00</span></div>
+
+        {% if current_task %}
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                // 1. Check if the task exists (Jinja logic)
+                    
+                    console.log("Active Task Found. Initializing Timer...");
+
+                    // 2. Safely convert Python numbers to JS numbers
+                    // We use 'default(0)' to prevent 'None' errors
+                    // We use 'int' to ensure no weird string quotes appear
+                    var h = Number("{{ current_task.hour | default(0) | int }}");
+                    var m = Number("{{ current_task.min | default(0) | int }}");
+                    var s = Number("{{ current_task.sec | default(0) | int }}");
+                    
+                    var totalSeconds = (h * 3600) + (m * 60) + s;
+                    
+                    var display = document.querySelector('#time');
+                    
+                    // 3. Start the timer (Make sure startTimer function is defined above this!)
+                    if (typeof startTimer === "function") {
+                        startTimer(totalSeconds, display);
+                    } else {
+                        console.error("Error: startTimer function is missing!");
+                    } 
+            });
+        </script>
+        {% endif %}
+
+        <button onclick="sendStartCommand(this)" class="greenbtn" style="font-size: 30px; margin: 10px 30px 10px 30px; border: none; padding: 10px;" {% if current_task %} disabled {% endif %}>Start</button>
+        <script>
+            async function sendStartCommand(btn) {
+                try {
+                    let response = await fetch('/api/start');
+
+                    if (response.ok) {
+                        window.location.reload(); 
+                    } else {
+                        let errorMessage = await response.text();
+                        alert("Error: " + errorMessage);
+                    }
+                } catch (error) {
+                    console.error("Network Error:", error);
+                    alert("Failed to connect to the oven controller.");
+                }
+            }
+            
+        </script>
+    </div>
+
+</main>
+
+<script>
+    async function sendNewTask() {
+    // 1. Grab the values from the HTML boxes
+    const tempVal = document.getElementById('newTemp').value;
+    const hrsVal = document.getElementById('newHrs').value || 0; // Default to 0 if empty
+    const minVal = document.getElementById('newMin').value || 0;
+    const secVal = document.getElementById('newSec').value || 0;
+
+    // 2. Safety Check
+    if (!tempVal) {
+        alert("Please enter a temperature!");
+        return;
+    }
+
+    if (Number(minVal) > 59) {
+        alert("Error, minutes cannot exceed 59!");
+        return;
+    }
+
+    if (Number(secVal) > 59) {
+        alert("Error, seconds cannot exceed 59!");
+        return;
+    }
+
+    if (Number(secVal) + Number(minVal) + Number(hrsVal) <= 0) {
+        alert("Error, time cannot be set below or equal 0.")
+        return;
+    }
+
+    //Network Request
+    try {
+        const response = await fetch('/api/add_task', {
+            method: 'POST',
+            //Sending JSON
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            //Bundle the data into a text string
+            body: JSON.stringify({
+                temp: tempVal,
+                hours: hrsVal,
+                minutes: minVal,
+                seconds: secVal
+            })
+        });
+
+        // 4. Handle the Result
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            console.log("Task added!");
+            //Clear the boxes so the user can type again
+            document.getElementById('newTemp').value = "";
+            
+            //Refresh table to reflect changes
+            window.location.reload();
+        } else {
+            alert("Error from server: " + data.message);
+        }
+
+    } catch (error) {
+        console.error("Network Error:", error);
+        alert("Failed to connect to the oven controller.");
+    }
+}
+
+function startTimer(duration, display) {
+    var start = 0;
+    function timer() {
+        var start_time = Number("{{ current_task.start_time | default(0) }}");
+        var elapsed = (Date.now() - (start_time * 1000)) / 1000;
+        
+        // Remaining = Total Duration - Elapsed
+        var diff = duration - elapsed;  
+        
+        if (diff <= 0) {
+            clearInterval(timerInterval);
+            display.textContent = "00:00:00";
+            return;
+        }
+
+        hours = (diff / 3600) | 0;
+        minutes = ((diff % 3600) / 60) | 0;
+        seconds = (diff % 60) | 0;
+
+        hours = hours < 10 ? "0" + hours : hours;
+        minutes = minutes < 10 ? "0" + minutes : minutes;
+        seconds = seconds < 10 ? "0" + seconds : seconds;
+
+        display.textContent = hours + ":" + minutes + ":" + seconds; 
+
+    };
+    timer();
+    var timerInterval = setInterval(timer, 1000)
+}
+
+
+
+</script>
+
+
+{% endblock %}
